@@ -1,35 +1,32 @@
-# pi-herdr-status
+# pi-herdr-status — cópia de Rodrigo
 
-A [pi](https://github.com/earendil-works/pi) extension that reports active model and status metadata to [Herdr](https://herdr.dev)'s sidebar agents panel.
+Versão **0.2.1-rodrigo.1**, baseada em [pi-herdr-status 0.2.1](https://github.com/dereknex/pi-extensions/tree/main/packages/pi-herdr-status).
 
-Uses Herdr's `pane.report-metadata` socket/CLI API with `--token model_info=<value>` under a dedicated `--source pi-model` namespace to prevent collisions with other plugins (such as `gh-pr`).
+[Alterações detalhadas](LOCAL-CHANGES.md) · [Changelog](CHANGELOG.md) · [Origem verificável](UPSTREAM.json) · [Licença MIT original](LICENSE)
 
-## Features
+Esta cópia preserva o autor original e mantém um commit inicial com os arquivos do pacote npm baixado. Não publica nada sob o nome do autor no npm.
 
-- **Model Synchronization**: Automatically updates Herdr's sidebar status whenever the model changes (on startup, session restore, `/model`, or `Ctrl+P`).
-- **Agent State Reporting**: Automatically syncs agent lifecycle states (`working`, `blocked` for waiting user confirmation, `idle`) to Herdr's sidebar.
-- **Multi-Pane Aware**: Accurately targets the current pane using `HERDR_PANE_ID`.
-- **Collision-Free**: Uses `--source pi-model` and `--token model_info=<value>` to isolate metadata.
-- **Graceful Cleanup**: Clears `model_info` token on session shutdown.
+Esta variante informa somente o modelo e o nível de raciocínio ao Herdr. A integração oficial do Herdr continua responsável pelos estados working/blocked/idle. Não substitui diálogos e não registra um segundo repórter de ciclo de vida.
 
-## Installation
+## Instalação
 
-```bash
-pi install npm:pi-herdr-status
+Depois de terminar o trabalho na sessão atual, escolha uma única fonte do plugin e instale:
+
+```powershell
+pi install https://github.com/rodrigojager/pi-herdr-status@v0.2.1-rodrigo.1
 ```
 
-## Herdr Configuration
+Mantenha a integração oficial `herdr-agent-state.ts`. No Herdr instalado, o campo de exibição é `$model_info`.
 
-Add `model_info` to your `[ui.sidebar.agents.rows_by_agent]` configuration in `~/.config/herdr/config.toml`:
+[Perfil de configuração da instalação](https://github.com/rodrigojager/pi-home-kit/tree/main/profiles/2026-10-02-ui).
 
-```toml
-[ui.sidebar.agents.rows_by_agent]
-pi = [
-  ["state_icon", "workspace", "tab"],
-  ["agent", "model_info"]
-]
+## Validação
+
+Testes de desenvolvimento usam Node 26.
+
+```powershell
+npm install
+npm test
 ```
 
-## License
-
-MIT
+A versão instalada foi validada também pelo loader do Pi 1.0.0 e pelo executável real em RPC isolado, sem chamadas ao modelo.

@@ -1,3 +1,5 @@
+> This file preserves historical upstream documentation. This copy has different behavior: see README.md and LOCAL-CHANGES.md for the metadata-only integration and installation.
+
 # pi-herdr-status
 
 [pi](https://github.com/earendil-works/pi) 扩展：自动将 pi 当前使用的模型信息实时同步至 [Herdr](https://herdr.dev) 的侧边栏 Agents 面板。

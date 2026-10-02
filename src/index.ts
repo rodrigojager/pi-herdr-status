@@ -30,7 +30,7 @@ function runHerdrSerially(args: string[]): void {
 	metadataQueue = metadataQueue.then(
 		() =>
 			new Promise<void>((resolve) => {
-				execFileImpl("herdr", args, () => resolve());
+				execFileImpl("herdr", args, { timeout: 2000, windowsHide: true, maxBuffer: 65536 }, () => resolve());
 			}),
 	);
 }
@@ -103,7 +103,7 @@ export function reportMetadata(
 	if (paneId) {
 		args.push(paneId);
 	}
-	args.push("--source", source, "--token", `${tokenName}=${statusText}`);
+	args.push("--source", source, "--agent", "pi", "--applies-to-source", "herdr:pi", "--token", `${tokenName}=${statusText}`);
 
 	runHerdrSerially(args);
 }
@@ -120,7 +120,7 @@ export function clearMetadata(
 	if (paneId) {
 		args.push(paneId);
 	}
-	args.push("--source", source, "--clear-token", tokenName);
+	args.push("--source", source, "--agent", "pi", "--applies-to-source", "herdr:pi", "--clear-token", tokenName);
 
 	runHerdrSerially(args);
 }
@@ -209,159 +209,21 @@ export function formatModelLabel(
 	return baseLabel;
 }
 
+/** The official Herdr integration remains the sole lifecycle/status reporter. */
 export default function (pi: ExtensionAPI): void {
-	const extPi = pi as ExtendedExtensionAPI;
-	const socketPath = process.env.HERDR_SOCKET_PATH;
-	const paneId = process.env.HERDR_PANE_ID;
-
-	// Exit early if not running inside Herdr or running as a subagent process
-	if ((!socketPath && !paneId) || isSubagent()) {
-		return;
-	}
-
-	let currentModel: { provider?: string; id?: string; name?: string } | undefined;
-	let currentThinkingLevel: string | undefined;
-	let lifecycleState: HerdrAgentState = "idle";
-	let activeDialogs = 0;
-	const activeAttentions = new Set<string>();
-
-	const isBlocked = () => activeDialogs > 0 || activeAttentions.size > 0;
-
-	const publishState = (state: HerdrAgentState, message?: string) => {
-		reportAgentState(state, message, "pi", paneId);
-	};
-
-	const setLifecycleState = (state: HerdrAgentState) => {
-		lifecycleState = state;
-		if (!isBlocked()) publishState(state);
-	};
-
-	const emitHerdrBlocked = (active: boolean, label?: string) => {
-		try {
-			pi.events?.emit?.("herdr:blocked", { active, label });
-		} catch {
-			// Non-authoritative event bridge
-		}
-	};
-
-	const onDialogOpen = (title: string) => {
-		activeDialogs += 1;
-		const message = title ? `Waiting for user: ${title}` : "Waiting for user";
-		publishState("blocked", message);
-		emitHerdrBlocked(true, message);
-	};
-
-	const onDialogClose = () => {
-		activeDialogs -= 1;
-		if (!isBlocked()) publishState(lifecycleState);
-		emitHerdrBlocked(false);
-	};
-
-	const updateStatus = () => {
-		const label = formatModelLabel(currentModel, currentThinkingLevel);
-		if (label) {
-			reportMetadata(label, paneId);
-		}
-	};
-
-	const ensurePatched = (ctx?: ExtensionContext) => {
-		if (ctx?.hasUI && !isSubagent(ctx)) {
-			patchUI(ctx.ui, onDialogOpen, onDialogClose);
-		}
-	};
-
-	// Listen for session start (notifies default model on pi startup / reload / resume)
-	pi.on("session_start", async (_event, ctx) => {
-		if (isSubagent(ctx)) return;
-		ensurePatched(ctx);
-		if (ctx.model) {
-			currentModel = ctx.model;
-		}
-		if (ctx.thinkingLevel !== undefined) {
-			currentThinkingLevel = ctx.thinkingLevel;
-		} else if (typeof extPi.getThinkingLevel === "function") {
-			currentThinkingLevel = extPi.getThinkingLevel();
-		}
-		updateStatus();
-	});
-
-	// Listen for model selection (fires on model switch)
-	pi.on("model_select", async (event, ctx) => {
-		if (isSubagent(ctx)) return;
-		ensurePatched(ctx);
-		currentModel = event.model;
-		if (ctx?.thinkingLevel !== undefined) {
-			currentThinkingLevel = ctx.thinkingLevel;
-		} else if (typeof extPi.getThinkingLevel === "function") {
-			currentThinkingLevel = extPi.getThinkingLevel();
-		}
-		updateStatus();
-	});
-
-	// Listen for thinking level changes
-	pi.on("thinking_level_select", async (event, ctx) => {
-		if (isSubagent(ctx)) return;
-		ensurePatched(ctx);
-		currentThinkingLevel = event.level;
-		updateStatus();
-	});
-
-	// Listen for agent lifecycle events for state updates
-	pi.on("agent_start", async (_event, ctx) => {
-		if (isSubagent(ctx)) return;
-		ensurePatched(ctx);
-		setLifecycleState("working");
-	});
-
-	pi.on("tool_execution_start", async (_event, ctx) => {
-		if (isSubagent(ctx)) return;
-		ensurePatched(ctx);
-		setLifecycleState("working");
-	});
-
-	pi.on("agent_settled", async (_event, ctx) => {
-		if (isSubagent(ctx)) return;
-		ensurePatched(ctx);
-		setLifecycleState("idle");
-	});
-
-	// Immune-Brain user-attention integration: track active attentions and
-	// map them onto the existing blocked/unblocked lifecycle.
-	pi.events?.on?.("immune-brain:user-attention.v1", (data: unknown) => {
-		try {
-			if (!data || typeof data !== "object") return;
-			const evt = data as Record<string, unknown>;
-			if (typeof evt.active !== "boolean" || typeof evt.attention_id !== "string" || !evt.attention_id) return;
-
-			if (evt.active) {
-				if (activeAttentions.has(evt.attention_id)) return; // idempotent
-				activeAttentions.add(evt.attention_id);
-				const label = typeof evt.label === "string" && evt.label ? evt.label : "Immune-Brain";
-				const message = `Waiting for user: ${label}`;
-				publishState("blocked", message);
-				emitHerdrBlocked(true, message);
-			} else {
-				if (!activeAttentions.has(evt.attention_id)) return; // idempotent
-				activeAttentions.delete(evt.attention_id);
-				if (!isBlocked()) publishState(lifecycleState);
-				emitHerdrBlocked(false);
-			}
-		} catch {
-			// Malformed payload must not propagate to host
-		}
-	});
-
-	// Clean up metadata only on a real quit. Session switches (new/resume/fork/reload)
-	// are immediately followed by session_start, whose report would race with a clear
-	// here and could leave model_info deleted.
-	pi.on("session_shutdown", async (event, ctx) => {
-		if (isSubagent(ctx)) return;
-		if (event.reason !== "quit") return;
-		for (let i = 0; i < activeAttentions.size; i++) {
-			emitHerdrBlocked(false);
-		}
-		activeAttentions.clear();
-		clearMetadata(paneId);
-		publishState("idle");
-	});
+  const paneId = process.env.HERDR_PANE_ID;
+  if (!paneId || isSubagent()) return;
+  const update = (_event: unknown, ctx: ExtensionContext) => {
+    if (!ctx.hasUI || isSubagent(ctx)) return;
+    const label = formatModelLabel(ctx.model, ctx.thinkingLevel ?? pi.getThinkingLevel());
+    if (label) reportMetadata(label, paneId);
+    else clearMetadata(paneId);
+  };
+  pi.on("session_start", update);
+  pi.on("model_select", update);
+  pi.on("thinking_level_select", update);
+  pi.on("before_agent_start", update);
+  pi.on("session_shutdown", (event, ctx) => {
+    if (event.reason === "quit" && ctx.hasUI && !isSubagent(ctx)) clearMetadata(paneId);
+  });
 }

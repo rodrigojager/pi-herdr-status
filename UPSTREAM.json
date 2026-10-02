@@ -1,0 +1,8 @@
+{
+  "package": "pi-herdr-status",
+  "version": "0.2.1",
+  "repository": "https://github.com/dereknex/pi-extensions/tree/main/packages/pi-herdr-status",
+  "source": "Published npm package snapshot; independent copy, not the upstream monorepo fork",
+  "originalArchive": "pi-herdr-status-0.2.1.tgz",
+  "originalArchiveSha256": "54bd81cddfa840fd20822e7429c88dc7fb215209e80311bdb8f07c268a1fd394"
+}

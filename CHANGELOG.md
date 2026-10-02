@@ -1,3 +1,9 @@
+# Rodrigo release — 0.2.1-rodrigo.1 (2026-10-02)
+
+- Metadata-only integration alongside official Herdr lifecycle reporting.
+- Bounded Windows CLI queue and pane/source targeting.
+- Changes and reproducible tests documented in LOCAL-CHANGES.md.
+
 # pi-herdr-status
 
 ## 0.2.1
